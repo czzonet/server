@@ -36,6 +36,8 @@ end
 -- 处理数据头，注意一个一个字节判断，避免等待过长字节而阻塞超时。
 function frame_head_process ()
     -- 0xFFFA，即255 250
+    -- TODO 测试错误数据帧的日志记录情况
+    log_add("msg","========")
     local temp1 = receive_length_of_data(1)
     if temp1 == false then
         return false
@@ -133,35 +135,63 @@ function frame_respond_process ()
             table.insert(d_time_table,string.char(bcd_str_to_bcd_num(string.sub(d_time,2*i-1,2*i))))
         end
         local d_time_entire = table.concat(d_time_table)
-        -- TODO 把这个转换进行函数封装
-        -- 关键思路：把真值格式化成双倍长度字符串，再两两字节合并
-        -- 先把数字转化为十六进制字符串，长度为8，再分字节转回原始数据字符串
-        local power_hex_str = string.format("%08X",2)
-        local power_table = {}
-        for i=1,(#power_hex_str)/2 do
-            table.insert(power_table,string.char(string.sub(power_hex_str,2*i-1,2*i)))
-        end
-        local power_entire = table.concat(power_table)
+
+        local power_entire = value_to_data_str(2, 4)
         -- 长度固定的是(2+1+2+1+2)+(1+7+4)+1-(2+1+2)=16
-        local frame_respond_first_part = string.sub(frame_data_entire,1,3)..string.char(0)..string.format("%c",16)..string.sub(frame_data_entire,6,8)
+        local frame_respond_first_part = string.sub(frame_data_entire,1,3)..value_to_data_str(16, 2)..string.sub(frame_data_entire,6,8)
         local frame_respond_last_part = login_result..d_time_entire..power_entire
         local frame_respond_entire = frame_respond_first_part..frame_respond_last_part
         local frame_respond_final = frame_respond_entire..check_sum_process(frame_respond_entire)
         -- 化为str进行日志记录
-        local frame_respond_final_hex_str_table = {}
-        for i=1,#frame_respond_final do
-            table.insert(frame_respond_final_hex_str_table,string.format("%02X",string.byte(frame_respond_final,i)))
-        end
-        local frame_respond_final_hex_str_entire = table.concat(frame_respond_final_hex_str_table)
-        log_add("msg","frame_respond_final is :"..frame_respond_final_hex_str_entire)
+        log_add("msg","frame_respond_final is :"..data_str_to_hex_str(frame_respond_final))
+
+        --发送
         sock:settimeout(1000)
         local bytes, err = sock:send(frame_respond_final)
     end
 
     --
     if (string.byte(frame_data_entire,6) == 2) then
+        -- 命令二 采集
+        log_add("msg","start respond.order type is 1.")
 
+        local frame_respond_first_part = string.sub(frame_data_entire,1,3)..value_to_data_str(5, 2)..string.sub(frame_data_entire,6,8)
+        local frame_respond_last_part = value_to_data_str(1, 1)
+        local frame_respond_entire = frame_respond_first_part..frame_respond_last_part
+        local frame_respond_final = frame_respond_entire..check_sum_process(frame_respond_entire)
+        -- 化为str进行日志记录
+        log_add("msg","frame_respond_final is :"..data_str_to_hex_str(frame_respond_final))
+
+        --发送
+        sock:settimeout(1000)
+        local bytes, err = sock:send(frame_respond_final)
     end
+end
+
+-- 即将真值化为指定字节长度原始数据字符串
+function value_to_data_str (value, width)
+    --化十六进制字符串，长度扩充两倍
+    local format_str = string.format("%s0%dX","%",2*width)
+    local hex_str = string.format(format_str,value)
+    local data_str_table = {}
+    --两个一组字符压缩回原始数据字符串
+    for i=1,(#hex_str)/2 do
+        table.insert(data_str_table, string.char(tonumber(string.sub(hex_str,2*i-1,2*i), 16)))
+    end
+    local data_str_entire = table.concat(data_str_table)
+    return data_str_entire
+end
+
+--TODO 把原始字符串转化为真值
+
+-- 将原始数据字符串化为十六进制字符串，以便于显示阅读，或者日志记录
+function data_str_to_hex_str (data_str)
+    local hex_str_table = {}
+    for i=1,#data_str do
+        table.insert(hex_str_table, string.format("%02X", string.byte(data_str, i)))
+    end
+    local hex_str_entire = table.concat(hex_str_table)
+    return hex_str_entire
 end
 
 -- main process start

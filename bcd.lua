@@ -28,6 +28,7 @@ end
 function bcd_str_to_bcd_num (bcd_str)
     return tonumber(bcd_str, 16)
 end
+--TODO 十六进制字符串的区别，bcd只是特殊
 -- 输入0x18=24 ，返回"18"
 function bcd_num_to_bcd_str (num)
     string.format("%02X",num)
